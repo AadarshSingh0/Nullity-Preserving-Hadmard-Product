@@ -1,0 +1,181 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+Notebook[{
+Cell["Rank-preserving (nullity-preserving) element-wise transformations: code for the figures", "Title"],
+
+Cell["This notebook reproduces the numerical results of
+A. Singh, \"Independent chiral control in theory-space models: a rank-preserving framework and its application to neutrino mass generation\", Eur. Phys. J. C 86, 743 (2026), arXiv:2409.09033 (Chapter 3 of the author's PhD thesis).
+
+Contents
+  1. Setup: the separable transformation and a rank check
+  2. Rank preservation: a quick demonstration
+  3. Figure 1 (thesis Fig. 3.1): Kaluza-Klein spectrum before and after a transformation
+  4. Figure 2 (thesis Fig. 3.2): light-neutrino mass versus number of sites
+  5. Supporting numbers quoted in the text (next-lightest state, seesaw cross-check, endpoint formula)
+  6. Sensitivity of the light mass to random perturbations
+
+Run with Evaluation > Evaluate Notebook (written for Mathematica 13). The whole notebook takes a few minutes; Section 6 is the slowest. Figures are exported as PDF next to this notebook.", "Text"],
+
+Cell["1. Setup", "Section"],
+
+Cell["Convention used throughout. A transformation acts element by element as
+    b_ij = a_ij / g(i,j).
+It preserves the rank of every matrix when g is separable, g(i,j) = gL(i) gR(j) with nonzero gL and gR. Then B = DL^-1 . A . DR^-1 with DL = diag(gL(i)) and DR = diag(gR(j)), so the numbers of left- and right-chiral zero modes are unchanged.", "Text"],
+
+Cell["ClearAll[\"Global`*\"];
+outDir = Quiet @ Check[NotebookDirectory[], $HomeDirectory];
+
+(* b_ij = a_ij / (gL(i) gR(j)) for a matrix M and row/column functions gL, gR *)
+separable[M_, gL_, gR_] := Table[M[[i, j]]/(gL[i] gR[j]), {i, Length[M]}, {j, Length[First[M]]}];
+
+(* rank and number of zero modes of an (rows x columns) mass matrix *)
+zeroModes[M_] := With[{r = MatrixRank[M]},
+  <|\"rank\" -> r, \"right-chiral zero modes\" -> Length[First[M]] - r, \"left-chiral zero modes\" -> Length[M] - r|>];
+
+(* plot styling shared by both figures *)
+orange = RGBColor[1, 0.498, 0.054];
+green  = RGBColor[0.172, 0.627, 0.172];
+commonOpts = {Frame -> True, FrameStyle -> Directive[Black, AbsoluteThickness[1.2]],
+   FrameTicksStyle -> Directive[Black, 16], LabelStyle -> Directive[Black, 16],
+   GridLines -> Automatic, GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]],
+   ImageSize -> Large, BaseStyle -> Directive[FontSize -> 16, Black]};", "Input"],
+
+Cell["2. Rank preservation: a quick demonstration", "Section"],
+
+Cell["A random 6 x 7 matrix of rank 4 keeps its rank and both nullities under a separable transformation. A non-separable divisor can change the rank of some matrix: the all-ones 2 x 2 matrix (rank 1) becomes rank 2.", "Text"],
+
+Cell["SeedRandom[7];
+A = RandomInteger[{-3, 3}, {6, 4}] . RandomInteger[{-3, 3}, {4, 7}];   (* 6 x 7, rank at most 4 *)
+B = separable[A, (#^2 + 1) &, (2^#) &];                                (* any nonzero row and column functions *)
+{zeroModes[A], zeroModes[B]}", "Input"],
+
+Cell["A2 = {{1, 1}, {1, 1}};
+g2 = {{1, 1}, {1, 2}};          (* not of the form gL(i) gR(j) *)
+{MatrixRank[A2], MatrixRank[A2/g2]}", "Input"],
+
+Cell["3. Figure 1: Kaluza-Klein spectrum of a deconstructed model", "Section"],
+
+Cell["The deconstruction mass matrix has N + 1 rows and N columns, with 1 on the diagonal and -1 below it (in units of M_f). Its singular values are m_k = 2 M_f sin(k pi / (2 (N + 1))), k = 1, ..., N, which is the spectrum of Eq. (3.3.24) with N -> N + 1.
+
+The transformed matrix uses g(i,j) = (-1)^(i-j) / sin(2 f i), i.e. M'_ij = (-1)^(i-j) sin(2 f i) M_ij, with N = 50 and f = 1. As a separable choice, gL(i) = (-1)^i / sin(2 f i) and gR(j) = (-1)^j. The sign factor does not change the singular values.", "Text"],
+
+Cell["nKK = 50; fKK = 1;
+
+decon[n_] := Table[Which[i == j, 1, i == j + 1, -1, True, 0], {i, n + 1}, {j, n}];
+
+M0 = decon[nKK];
+M1 = N @ separable[M0, ((-1)^#/Sin[2 fKK #]) &, ((-1)^#) &];
+
+spec0 = SingularValueList[N[M0]];     (* decreasing order *)
+spec1 = SingularValueList[M1];
+
+(* checks: analytic spectrum and unchanged zero-mode counts *)
+analytic = N @ Table[2 Sin[k Pi/(2 (nKK + 1))], {k, nKK}];
+{Max[Abs[Sort[spec0] - Sort[analytic]]], zeroModes[N[M0]], zeroModes[M1]}", "Input"],
+
+Cell["fig1 = ListPlot[{spec0, spec1},
+  PlotStyle -> {orange, green},
+  PlotLegends -> Placed[{Style[\"M(i,j)\", 17, Black], Style[\"M'(i,j)\", 17, Black]}, {0.85, 0.8}],
+  FrameLabel -> {Style[\"i (singular values in decreasing order)\", 18, Black], Style[\"Mass (units of M_f)\", 18, Black]},
+  PlotLabel -> Style[Row[{\"N = \", nKK, \", f = \", fKK}], 16, Black],
+  PlotRange -> All, Sequence @@ commonOpts]", "Input"],
+
+Cell["Export[FileNameJoin[{outDir, \"Fig1_KK_spectrum.pdf\"}], fig1]", "Input"],
+
+Cell["4. Figure 2: light-neutrino mass versus number of sites", "Section"],
+
+Cell["Nearest-neighbour chain H (n x n, tridiagonal, all nonzero entries equal to m) and the transformed chain H'_ij = sin(2f)^(i-j) H_ij, which is the separable choice gL(i) = sin(2f)^(-i), gR(j) = sin(2f)^j.
+
+The full Dirac mass matrix has rows {nuL, L1, ..., LN} and columns {R1, ..., RN, nuR}. The boundary couplings are nuL-R_N and L_1-nuR, each equal to y v / sqrt(2) with y1 = y2 = 1. The physical light mass is the smallest singular value of this full matrix. The matrix is badly conditioned (condition number around 10^15 at N = 40), so it is computed with 80-digit arithmetic.", "Text"],
+
+Cell["mScale = 1;          (* chain mass scale m in TeV *)
+yv     = 173/1000;   (* y v / Sqrt[2] in TeV, with y1 = y2 = 1 *)
+f      = 13/10;      (* transformation parameter *)
+prec   = 80;         (* working precision in digits *)
+nList  = Range[5, 80];
+
+H[n_]  := mScale Table[Which[i == j, 1, Abs[i - j] == 1, 1, True, 0], {i, n}, {j, n}];
+Hp[n_] := separable[H[n], (Sin[2 f]^(-#)) &, (Sin[2 f]^#) &];
+
+fullMatrix[h_] := Module[{n = Length[h], F},
+  F = ConstantArray[0, {n + 1, n + 1}];
+  F[[2 ;; n + 1, 1 ;; n]] = h;   (* rows {nuL, L1..LN}, columns {R1..RN, nuR} *)
+  F[[1, n]] = yv;                (* nuL - R_N *)
+  F[[2, n + 1]] = yv;            (* L_1 - nuR *)
+  F];
+
+(* smallest singular value of the full matrix, converted from TeV to eV *)
+lightMass[h_] := 10^12 Last[SingularValueList[N[fullMatrix[h], prec], Tolerance -> 0]];
+
+(* check that Hp is the matrix written in the text *)
+Simplify[Hp[6] == Table[Sin[2 f]^(i - j), {i, 6}, {j, 6}] H[6]]", "Input"],
+
+Cell["dataH  = Table[{n, lightMass[H[n]]},  {n, nList}];
+dataHp = Table[{n, lightMass[Hp[n]]}, {n, nList}];
+
+fig2 = ListLogPlot[{dataH, dataHp},
+  PlotStyle -> {orange, Darker[Green, 0.3]},
+  PlotLegends -> Placed[{Style[\"H(i,j)\", 17, Black], Style[\"H'(i,j)\", 17, Black]}, {0.8, 0.62}],
+  FrameLabel -> {Style[\"N sites\", 18, Black], Style[\"Light-neutrino mass (eV)\", 18, Black]},
+  PlotLabel -> Style[Row[{\"m = \", mScale, \" TeV, y = 1, f = \", N[f]}], 16, Black],
+  PlotRange -> All, Sequence @@ commonOpts]", "Input"],
+
+Cell["Export[FileNameJoin[{outDir, \"Fig2_neutrino_mass.pdf\"}], fig2]", "Input"],
+
+Cell["5. Supporting numbers quoted in the text", "Section"],
+
+Cell["(a) For the untransformed chain, |(H^-1)_n1| = 1/m whenever n is not 2 mod 3, and H has an exact zero mode when n = 2 mod 3. This is why the orange points in Fig. 2 show no suppression and a period-three pattern.", "Text"],
+
+Cell["Table[{n, n - MatrixRank[H[n]], If[MatrixRank[H[n]] == n, Abs[Inverse[H[n]][[n, 1]]], \"singular\"]}, {n, 5, 16}] //
+  TableForm[#, TableHeadings -> {None, {\"n\", \"zero modes of H\", \"|(H^-1)_n1| (units of 1/m)\"}}] &", "Input"],
+
+Cell["(b) Since H' = D H D^-1 with D = diag(sin(2f)^i), the element entering the light mass is (H'^-1)_n1 = sin(2f)^(n-1) (H^-1)_n1. The light mass therefore falls geometrically with n.", "Text"],
+
+Cell["(* ratio (H'^-1)_n1 / [sin(2f)^(n-1) (H^-1)_n1]; should equal 1 *)
+Table[Inverse[N[Hp[n], prec]][[n, 1]]/(N[Sin[2 f], prec]^(n - 1) Inverse[H[n]][[n, 1]]), {n, {7, 10, 13}}] // N", "Input"],
+
+Cell["(c) Light state, next-lightest chain state and its mixing with nuL for the transformed chain. For n = 2 mod 3 the chain itself has an exact zero mode, which pairs with the neutrino (large mixing in the last column).", "Text"],
+
+Cell["lightStates[h_] := Module[{u, w, v},
+  {u, w, v} = SingularValueDecomposition[N[fullMatrix[h], prec]];
+  {10^12 w[[-1, -1]], 10^12 w[[-2, -2]], Abs[u[[1, -2]]]^2}];
+
+TableForm[Table[Join[{n}, N[lightStates[Hp[n]], 4]], {n, {30, 39, 40, 41, 50, 60}}],
+ TableHeadings -> {None, {\"N\", \"m_light (eV)\", \"m_next (eV)\", \"|U_nuL,next|^2\"}}]", "Input"],
+
+Cell["(d) Cross-check of the full-matrix result against the seesaw in the chain mass basis and the endpoint formula m_nu ~ (y v / sqrt 2)^2 |(H'^-1)_N1|.", "Text"],
+
+Cell["seesawBasis[h_] := Module[{u, w, v, fm},
+  {u, w, v} = SingularValueDecomposition[N[Transpose[h], prec]];
+  (* h = v.w.Transpose[u]: nuL couples to R_N through u[[-1]], nuR to L_1 through v[[1]] *)
+  fm = Join[{{0, Sequence @@ (yv u[[-1]])}}, Join[Transpose[{yv v[[1]]}], w, 2]];
+  10^12 Min[SingularValueList[fm, Tolerance -> 0]]];
+
+endpoint[h_] := 10^12 yv^2 Abs[Inverse[N[h, prec]][[Length[h], 1]]];
+
+TableForm[Table[{n, N[lightMass[Hp[n]], 6], N[seesawBasis[Hp[n]], 6], N[endpoint[Hp[n]], 6]}, {n, {30, 40, 60}}],
+ TableHeadings -> {None, {\"N\", \"full matrix (eV)\", \"mass-basis seesaw (eV)\", \"endpoint formula (eV)\"}}]", "Input"],
+
+Cell["6. Sensitivity to random perturbations", "Section"],
+
+Cell["Each nonzero entry of H' is multiplied by (1 + eps_ij), with eps_ij drawn independently and uniformly from [-delta, delta]. Zero entries stay zero, so the connectivity of the chain is unchanged. The table gives the median and the 16-84 % range of the light mass at N = 40 over many realisations. The unperturbed value is about 0.17 eV.", "Text"],
+
+Cell["perturbedLightMass[n_, delta_] := Module[{eps},
+  eps = RandomReal[{-delta, delta}, {n, n}, WorkingPrecision -> prec];
+  lightMass[Hp[n] (1 + eps)]];
+
+SeedRandom[2026];
+nReal = 200;
+perturbStats = Table[
+   With[{vals = Table[perturbedLightMass[40, d], {nReal}]},
+    {d, Median[vals], Quantile[vals, 0.16], Quantile[vals, 0.84]}],
+   {d, {0.01, 0.05}}];
+
+TableForm[N[perturbStats, 4],
+ TableHeadings -> {None, {\"delta\", \"median (eV)\", \"16 % (eV)\", \"84 % (eV)\"}}]", "Input"]
+},
+StyleDefinitions->"Default.nb"
+]
